@@ -1,0 +1,77 @@
+---
+title: "scRNA_Seq_Seurat"
+output: html_document
+date: "2024-07-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## This document walk you through single cell RNA-Seq analysis using various R Packages
+
+We used sample files from this paper: GSE256291
+
+The data was processed using 10x Genomics protocol.
+
+
+
+```{r cars}
+###Loading Libraries
+library(rmarkdown)
+library(remotes)
+library(Seurat)
+```
+
+## Loading datasets
+
+First we need to load the data sets and create our Seurat object, which then let you to have all samples in one file that you can apply more downstream analysis. When we say, the data was processed using 10x technology, we have to expect 3 files for each samples, barcodes, features and matrix that has to be in one folder in order to make Read10X() function to work, otherwise they should be loaded by individualy. For more information, you could check
+
+```{r pressure, echo=FALSE}
+patinet1_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/patient1/")
+patinet2_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/patient2/")
+healthy1_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/healthy1/")
+healthy2_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/healthy2/")
+```
+
+Now we create our Seurat objects individualy and then combine them by merge() function
+
+```{r pressure}
+seurat1 <- CreateSeuratObject(patinet1_counts, project="cd14_patient1")
+seurat2 <- CreateSeuratObject(patinet2_counts, project="cd14_patient2")
+seurat3 <- CreateSeuratObject(healthy1_counts, project="cd14_healthy1")
+seurat4 <- CreateSeuratObject(healthy2_counts, project="cd14_healthy2")
+cd14_combined <- merge(seurat1, y=c(seurat2,seurat3,seurat4), add.cell.ids = c("patient1", "patient2","healthy1","healthy2"), project = "cd14")
+```
+
+Once we have the objects, we can visualize the data distibution of cells in each sample. First, we calculate mitochondrian RNA to get some idea that how much of them are mitochondrian and then plot them all together. we can plot either with dots or without
+
+```{r,fig.width=9,fig.height=5}
+cd14_combined[["percent.mt"]] <- PercentageFeatureSet(cd14_combined, pattern = "^MT[-\\.]")
+VlnPlot(cd14_combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+
+
+```{r,fig.width=9,fig.height=5}
+VlnPlot(cd14_combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size=0)
+```
+
+Now we want to check whether number of transcrpts and genes are correlating with each other. Alos we want to check whether mitochondrian feateares with number of RNA. This is what wer expect, positive correlation between number of features and RNAs, negative correlation between mitochondrian features and number of RNA.
+
+
+```{r,fig.width=11}
+library(patchwork)
+plot1 <- FeatureScatter(cd14_combined, feature1 = "nCount_RNA", feature2 = "percent.mt",pt.size=1)
+plot2 <- FeatureScatter(cd14_combined, feature1 = "nCount_RNA", feature2 = "nFeature_RNA",pt.size=1)
+plot1 + plot2
+```
+
+Now we know how to filter out cells in our object, according to the QC plots that we initially generated. After that we apply normalization to our data, which is a common thing to do as we want to have all values to be comparable easier. The method of normalization is 
+
+
+```{r}
+cd14_combined <- subset(cd14_combined, subset = nFeature_RNA > 500 & nFeature_RNA < 7000 & percent.mt < 5)
+cd14_combined <- NormalizeData(cd14_combined)
+```
+
