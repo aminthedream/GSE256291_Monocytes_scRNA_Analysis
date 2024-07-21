@@ -1,5 +1,5 @@
 ---
-title: "scRNA_Seq_Seurat"
+title: "scRNA_Seq_Seurat_Tutorial"
 output: html_document
 date: "2024-07-21"
 ---
@@ -10,24 +10,30 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## This document walk you through single cell RNA-Seq analysis using various R Packages
 
-We used sample files from this paper: GSE256291
+We used sample files from this study: GSE256291. This data has not been published yet and it is used for visualization purpose only.
 
 The data was processed using 10x Genomics protocol.
 
 
 
-```{r cars}
+```{r loading_packages}
 ###Loading Libraries
 library(rmarkdown)
 library(remotes)
 library(Seurat)
+library(dplyr)
+library(presto)
+library(devtools)
+library(patchwork)
+library(ggplot2)
+
 ```
 
 ## Loading datasets
 
 First we need to load the data sets and create our Seurat object, which then let you to have all samples in one file that you can apply more downstream analysis. When we say, the data was processed using 10x technology, we have to expect 3 files for each samples, barcodes, features and matrix that has to be in one folder in order to make Read10X() function to work, otherwise they should be loaded by individualy. For more information, you could check
 
-```{r pressure, echo=FALSE}
+```{r , echo=FALSE}
 patinet1_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/patient1/")
 patinet2_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/patient2/")
 healthy1_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/healthy1/")
@@ -36,7 +42,7 @@ healthy2_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/healthy2/")
 
 Now we create our Seurat objects individualy and then combine them by merge() function
 
-```{r pressure}
+```{r }
 seurat1 <- CreateSeuratObject(patinet1_counts, project="cd14_patient1")
 seurat2 <- CreateSeuratObject(patinet2_counts, project="cd14_patient2")
 seurat3 <- CreateSeuratObject(healthy1_counts, project="cd14_healthy1")
@@ -61,13 +67,12 @@ Now we want to check whether number of transcrpts and genes are correlating with
 
 
 ```{r,fig.width=11}
-library(patchwork)
 plot1 <- FeatureScatter(cd14_combined, feature1 = "nCount_RNA", feature2 = "percent.mt",pt.size=1)
 plot2 <- FeatureScatter(cd14_combined, feature1 = "nCount_RNA", feature2 = "nFeature_RNA",pt.size=1)
 plot1 + plot2
 ```
 
-Now we know how to filter out cells in our object, according to the QC plots that we initially generated. After that we apply normalization to our data, which is a common thing to do as we want to have all values to be comparable easier. The method of normalization is 
+Now we know how to filter out cells in our object, according to the QC plots that we initially generated. After that we apply normalization to our data, which is a common thing to do as we want to have all values to be comparable easier. The method of normalization is "LogNormalize" that normalizes the feature expression measurements for each cell by the total expression, multiplies this by a scale factor which is 10000 by default.
 
 
 ```{r}
@@ -75,3 +80,221 @@ cd14_combined <- subset(cd14_combined, subset = nFeature_RNA > 500 & nFeature_RN
 cd14_combined <- NormalizeData(cd14_combined)
 ```
 
+Now we can find the most variable features, in our case genes, within our data. We can set the number of variable features as we desire, here we choose 2000. There is no a "good" number to assing here, usually between 2000 to 5000 would be informative but it depends on data and question that we have. 
+
+
+```{r}
+cd14_combined <- FindVariableFeatures(cd14_combined, nfeatures = 2000)
+```
+
+
+Now we can visualize the result
+
+```{r,fig.width=10,fig.height=4}
+top_features <- head(VariableFeatures(cd14_combined), 20)
+plot1 <- VariableFeaturePlot(cd14_combined)
+plot2 <- LabelPoints(plot = plot1, points = top_features, repel = TRUE)
+plot1 + plot2
+```
+Since different genes have different base expression levels and distributions, the contribution of each gene to the analysis is different if no data transformation is performed. This is something we do not want as we don't want our analysis to only depend on genes that are highly expressed. Therefore a scaling is applied to the data using the selected features, just like one usually does in any data science field.
+
+```{r}
+cd14_combined <- ScaleData(cd14_combined)
+cd14_combined <- ScaleData(cd14_combined, vars.to.regress = c("nFeature_RNA", "percent.mt"))
+```
+
+
+Now we can apply dimensional reduction method such as PCA, UMAP and t-sne to the data so we can visualize them in 2D dimension. First we apply PCA, by default the number of top PCs is 50. 
+
+```{r}
+
+cd14_combined <- RunPCA(cd14_combined, npcs = 50)
+
+```
+```{r}
+
+ElbowPlot(cd14_combined, ndims = ncol(Embeddings(cd14_combined, "pca")))
+          
+```
+
+
+Here we can visualize which gene is contributing to which PC (top 4)
+
+```{r,fig.width=12,fig.height=12}
+
+PCHeatmap(cd14_combined, dims = 1:5, cells = 500, balanced = TRUE, ncol = 5)
+
+```
+
+Another method of visualization of the PCA analysis.
+
+```{r, fig.height=10}
+VizDimLoadings(cd14_combined, dims = 1:2, reduction = "pca")
+```
+
+Another one
+
+```{r}
+DimPlot(cd14_combined, reduction = "pca") + NoLegend()
+```
+
+
+```{r}
+cd14_combined <- RunTSNE(cd14_combined, dims = 1:20)
+cd14_combined <- RunUMAP(cd14_combined, dims = 1:20)
+```
+```{r, fig.width=12,fig.height=6}
+plot1 <- TSNEPlot(cd14_combined)
+plot2 <- UMAPPlot(cd14_combined)
+plot1 + plot2
+```
+
+
+As we see in our result, TSNE works better than the others, as we see distinct cluster among samples. Now we cherry pick 5 highly variable genes that we found in previous steps
+
+```{r, fig.width=14,fig.height=5}
+top_features
+plot1 <- FeaturePlot(cd14_combined, c("FCGR3A","CCDC26","ETS1","ITK","SEL1L3"),
+                     ncol=5, reduction = "tsne")
+
+plot1
+
+```
+
+
+
+
+Next step is clustering, as we need to know how many groups we can divide our samples to. A k-nearest neighbor network of cells is generated. Every cells is firstly connected to cells with the shortest distances, based on their corresponding PC values. Only cell pairs which are neighbors of each other are considered as connected. Proportion of shared neighbors between every cell pairs is then calculated and used to describe the strength of the connection between two cells. Weak connections are trimmed. This gives the resulted Shared Nearest Neighbor (SNN) network. 
+
+```{r}
+cd14_combined <- FindNeighbors(cd14_combined)
+```
+
+
+With the network constructed, the louvain community identification algorithm is applied to the netowkr to look for communities in the network, i.e. cell groups that cells in the same group tend to connect with each other, while connections between cells in different groups are sparse.
+
+```{r}
+cd14_combined <- FindClusters(cd14_combined, resolution = 1)
+
+```
+
+```{r, fig.width=12}
+
+plot1 <- DimPlot(cd14_combined, reduction = "tsne", label = TRUE)
+plot2 <- DimPlot(cd14_combined, reduction = "umap", label = TRUE)
+plot1 + plot2
+```
+
+the package called "harmony", apply various method to remove batch correction. Sometimes we need to apply it to our data when we have batch correction.
+
+
+```{r}
+library(harmony)
+
+cd14_combined <- RunHarmony(cd14_combined, group.by.vars = "orig.ident", dims.use = 1:20, max.iter.harmony = 50)
+cd14_combined <- RunUMAP(cd14_combined, reduction = "harmony", dims = 1:20)
+cd14_combined <- FindNeighbors(cd14_combined, reduction = "harmony", dims = 1:20) %>% FindClusters(resolution = 0.6)
+
+DimPlot(cd14_combined, reduction = "harmony", label = F)
+
+
+```
+
+
+Next, we find top marker in each cluster and filter it the way we desire.
+
+```{r}
+cd14_combined <- JoinLayers(cd14_combined)
+cd14_markers <- FindAllMarkers(cd14_combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = log(1.2))
+top_marker <- cd14_markers %>% group_by(cluster) %>% top_n(n = 1, wt = avg_log2FC)
+top_marker
+```
+
+
+Now we can visualize the result
+```{r}
+DoHeatmap(cd14_combined, features = top_marker$gene) + NoLegend()
+```
+
+Now we got to the most challenging part of the Single Cell analysis, cell annotation! Here, we manually annotated the cells based on marker of each cluster that we found in previous step and check the cell type based on that on panglaodb.se website, which is a great source for single cell RNA-Seq data.
+
+```{r}
+new_cluster_names <- c("Macrophages",
+                        "Fibroblasts",
+                        "Macrophages",
+                        "T Cells",
+                        "Keratinocytes",
+                        "Monocytes",
+                        "Fibroblasts",
+                        "Dendritic cells",
+                        "Unknown",
+                        "Epithelial Cells",
+                        "T Cells",
+                        "Fibroblasts",
+                        "T Cells",
+                        "B Cells")
+
+names(new_cluster_names) <- levels(cd14_combined)
+cd14_combined <- RenameIdents(cd14_combined, new_cluster_names)
+DimPlot(cd14_combined, reduction = "tsne", label = TRUE)
+```
+
+
+Sometimes we find to find pattern in our data, NMF clustering is a great method which allows us to find pattern from a huge data. After that we can reduce the dimension even more. We will NMF on both UMAP and TSNE
+```{r}
+library(GeneNMF)
+cd14_combined <- runNMF(cd14_combined, k = 13, assay="RNA")
+
+cd14_combined <- RunTSNE(cd14_combined, reduction = "NMF", dims=1:13, reduction.name = "NMF_Tsne", reduction.key = "nmfTsne_")
+cd14_combined <- RunUMAP(cd14_combined, reduction = "NMF", dims=1:13, reduction.name = "NMF_UMAP", reduction.key = "nmfUMAP_")
+
+```
+
+Now we can visualize the result from both UMAP and TSNE
+
+
+```{r}
+DimPlot(cd14_combined, reduction = "NMF_Tsne", label=F) + theme(aspect.ratio = 1,
+                                                            axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()) + ggtitle("NMF TSNE")
+```
+
+```{r}
+DimPlot(cd14_combined, reduction = "NMF_UMAP", label=F) + theme(aspect.ratio = 1,
+                                                            axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()) + ggtitle("NMF UMAP")
+```
+
+Then we can see how many "real" cluster we can get from our data and then investigate the most variable gene within each cluster. According to NMF, we can have 10 cluster unline seurat clustering which was telling that we have 13 clusters.
+
+```{r}
+cd14_list <- SplitObject(cd14_combined, split.by = "orig.ident")
+cd14_multi <- multiNMF(cd14_list, assay="RNA", slot="data", k=4:9, nfeatures = 1000)
+cd14_meta <- getMetaPrograms(cd14_multi,
+                                        nMP=10,
+                                        weight.explained = 0.7,
+                                        max.genes=100)
+NMF_Heatmap <- plotMetaPrograms(cd14_meta)
+```
+
+Now we zoom in each component (cluster)
+
+```{r}
+lapply(cd14_meta$metaprograms.genes, head)
+```
+
+```{r,fig.width=11}
+library(UCell)
+mp.genes <- cd14_meta$metaprograms.genes
+cd14_combined <- AddModuleScore_UCell(cd14_combined, features = mp.genes, assay="RNA", ncores=4, name = "")
+VlnPlot(cd14_combined, features=names(mp.genes),
+        pt.size = 0, ncol=6)
+```
+
+
+
+```{r}
+sessionInfo()
+```
