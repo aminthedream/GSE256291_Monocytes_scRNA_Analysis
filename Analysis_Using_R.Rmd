@@ -31,7 +31,8 @@ library(ggplot2)
 
 ## Loading datasets
 
-First we need to load the data sets and create our Seurat object, which then let you to have all samples in one file that you can apply more downstream analysis. When we say, the data was processed using 10x technology, we have to expect 3 files for each samples, barcodes, features and matrix that has to be in one folder in order to make Read10X() function to work, otherwise they should be loaded by individualy. For more information, you could check
+The initial step involves loading datasets to generate a Seurat object, which consolidates all samples for downstream analysis.
+For 10x technology data, three files per sample (barcodes, features, and matrix) must reside in a single directory for the Read10X() function. Otherwise, individual loading is required.
 
 ```{r , echo=FALSE}
 patinet1_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/patient1/")
@@ -40,7 +41,8 @@ healthy1_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/healthy1/")
 healthy2_counts <- Read10X(data.dir = "~/Github_Repos/inputs/data/healthy2/")
 ```
 
-Now we create our Seurat objects individualy and then combine them by merge() function
+Individual Seurat objects are created and subsequently combined using the merge() function.
+
 
 ```{r }
 seurat1 <- CreateSeuratObject(patinet1_counts, project="cd14_patient1")
@@ -50,7 +52,7 @@ seurat4 <- CreateSeuratObject(healthy2_counts, project="cd14_healthy2")
 cd14_combined <- merge(seurat1, y=c(seurat2,seurat3,seurat4), add.cell.ids = c("patient1", "patient2","healthy1","healthy2"), project = "cd14")
 ```
 
-Once we have the objects, we can visualize the data distibution of cells in each sample. First, we calculate mitochondrian RNA to get some idea that how much of them are mitochondrian and then plot them all together. we can plot either with dots or without
+After object creation, we analyze cellular RNA distribution by calculating mitochondrial RNA percentages and visualizing them collectively. The data can be displayed with or without data points.
 
 ```{r,fig.width=9,fig.height=5}
 cd14_combined[["percent.mt"]] <- PercentageFeatureSet(cd14_combined, pattern = "^MT[-\\.]")
@@ -63,7 +65,7 @@ VlnPlot(cd14_combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"),
 VlnPlot(cd14_combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size=0)
 ```
 
-Now we want to check whether number of transcrpts and genes are correlating with each other. Alos we want to check whether mitochondrian feateares with number of RNA. This is what wer expect, positive correlation between number of features and RNAs, negative correlation between mitochondrian features and number of RNA.
+We examine the correlation between transcript and gene counts, as well as between mitochondrial features and RNA quantity. The expected patterns are a positive correlation between feature and RNA counts, and a negative correlation between mitochondrial features and RNA quantity.
 
 
 ```{r,fig.width=11}
@@ -72,7 +74,7 @@ plot2 <- FeatureScatter(cd14_combined, feature1 = "nCount_RNA", feature2 = "nFea
 plot1 + plot2
 ```
 
-Now we know how to filter out cells in our object, according to the QC plots that we initially generated. After that we apply normalization to our data, which is a common thing to do as we want to have all values to be comparable easier. The method of normalization is "LogNormalize" that normalizes the feature expression measurements for each cell by the total expression, multiplies this by a scale factor which is 10000 by default.
+Following QC plot analysis, we filter cells and normalize the data for comparative analysis. The 'LogNormalize' method normalizes each cell's feature expression by total expression, scaled by a default factor of 10,000.
 
 
 ```{r}
@@ -80,7 +82,7 @@ cd14_combined <- subset(cd14_combined, subset = nFeature_RNA > 500 & nFeature_RN
 cd14_combined <- NormalizeData(cd14_combined)
 ```
 
-Now we can find the most variable features, in our case genes, within our data. We can set the number of variable features as we desire, here we choose 2000. There is no a "good" number to assing here, usually between 2000 to 5000 would be informative but it depends on data and question that we have. 
+We identify the most variable genes using a threshold of 2,000 features. While typical ranges are 2,000-5,000, the optimal number depends on the dataset and research objectives.
 
 
 ```{r}
@@ -88,7 +90,7 @@ cd14_combined <- FindVariableFeatures(cd14_combined, nfeatures = 2000)
 ```
 
 
-Now we can visualize the result
+Now, we can visualize the result
 
 ```{r,fig.width=10,fig.height=4}
 top_features <- head(VariableFeatures(cd14_combined), 20)
@@ -96,7 +98,9 @@ plot1 <- VariableFeaturePlot(cd14_combined)
 plot2 <- LabelPoints(plot = plot1, points = top_features, repel = TRUE)
 plot1 + plot2
 ```
-Since different genes have different base expression levels and distributions, the contribution of each gene to the analysis is different if no data transformation is performed. This is something we do not want as we don't want our analysis to only depend on genes that are highly expressed. Therefore a scaling is applied to the data using the selected features, just like one usually does in any data science field.
+
+Gene expression data requires scaling to prevent highly expressed genes from dominating the analysis. This normalization step ensures equal weighting of genes regardless of their baseline expression levels.
+
 
 ```{r}
 cd14_combined <- ScaleData(cd14_combined)
@@ -104,14 +108,13 @@ cd14_combined <- ScaleData(cd14_combined, vars.to.regress = c("nFeature_RNA", "p
 ```
 
 
-Now we can apply dimensional reduction method such as PCA, UMAP and t-sne to the data so we can visualize them in 2D dimension. First we apply PCA, by default the number of top PCs is 50. 
+We perform dimensionality reduction using PCA (default 50 principal components), followed by UMAP and t-SNE visualization in 2D space.
+
+
 
 ```{r}
 
 cd14_combined <- RunPCA(cd14_combined, npcs = 50)
-
-```
-```{r}
 
 ElbowPlot(cd14_combined, ndims = ncol(Embeddings(cd14_combined, "pca")))
           
@@ -126,20 +129,16 @@ PCHeatmap(cd14_combined, dims = 1:5, cells = 500, balanced = TRUE, ncol = 5)
 
 ```
 
-Another method of visualization of the PCA analysis.
+Another method for visualization of the PCA analysis.
 
 ```{r, fig.height=10}
 VizDimLoadings(cd14_combined, dims = 1:2, reduction = "pca")
 ```
 
-Another one
+Another method
 
 ```{r}
 DimPlot(cd14_combined, reduction = "pca") + NoLegend()
-```
-
-
-```{r}
 cd14_combined <- RunTSNE(cd14_combined, dims = 1:20)
 cd14_combined <- RunUMAP(cd14_combined, dims = 1:20)
 ```
@@ -150,7 +149,8 @@ plot1 + plot2
 ```
 
 
-As we see in our result, TSNE works better than the others, as we see distinct cluster among samples. Now we cherry pick 5 highly variable genes that we found in previous steps
+Based on the visualization results, t-SNE reveals more distinct sample clustering than other methods. We now select 5 genes from our previously identified highly variable genes.
+
 
 ```{r, fig.width=14,fig.height=5}
 top_features
@@ -161,17 +161,16 @@ plot1
 
 ```
 
+Clustering begins by generating a k-nearest neighbor network based on PC values. Cells are connected to their nearest neighbors, with connections weighted by shared neighbor proportions. Weak connections are removed to create the final Shared Nearest Neighbor (SNN) network.
 
-
-
-Next step is clustering, as we need to know how many groups we can divide our samples to. A k-nearest neighbor network of cells is generated. Every cells is firstly connected to cells with the shortest distances, based on their corresponding PC values. Only cell pairs which are neighbors of each other are considered as connected. Proportion of shared neighbors between every cell pairs is then calculated and used to describe the strength of the connection between two cells. Weak connections are trimmed. This gives the resulted Shared Nearest Neighbor (SNN) network. 
 
 ```{r}
 cd14_combined <- FindNeighbors(cd14_combined)
 ```
 
 
-With the network constructed, the louvain community identification algorithm is applied to the netowkr to look for communities in the network, i.e. cell groups that cells in the same group tend to connect with each other, while connections between cells in different groups are sparse.
+The Louvain algorithm is applied to identify cell communities within the network, detecting groups with dense internal connections but sparse connections between different groups.
+
 
 ```{r}
 cd14_combined <- FindClusters(cd14_combined, resolution = 1)
@@ -185,7 +184,7 @@ plot2 <- DimPlot(cd14_combined, reduction = "umap", label = TRUE)
 plot1 + plot2
 ```
 
-the package called "harmony", apply various method to remove batch correction. Sometimes we need to apply it to our data when we have batch correction.
+The Harmony package offers methods for batch effect correction, which may be necessary when batch effects are present in the data.
 
 
 ```{r}
@@ -201,7 +200,8 @@ DimPlot(cd14_combined, reduction = "harmony", label = F)
 ```
 
 
-Next, we find top marker in each cluster and filter it the way we desire.
+Here, We identify and filter top marker genes for each identified cluster.
+
 
 ```{r}
 cd14_combined <- JoinLayers(cd14_combined)
@@ -210,13 +210,13 @@ top_marker <- cd14_markers %>% group_by(cluster) %>% top_n(n = 1, wt = avg_log2F
 top_marker
 ```
 
-
 Now we can visualize the result
+
 ```{r}
 DoHeatmap(cd14_combined, features = top_marker$gene) + NoLegend()
 ```
 
-Now we got to the most challenging part of the Single Cell analysis, cell annotation! Here, we manually annotated the cells based on marker of each cluster that we found in previous step and check the cell type based on that on panglaodb.se website, which is a great source for single cell RNA-Seq data.
+Cell annotation, a critical step in single-cell analysis, involves manual annotation of clusters using identified markers and validation through the panglaodb.se database, a comprehensive single-cell RNA-Seq reference.
 
 ```{r}
 new_cluster_names <- c("Macrophages",
@@ -240,7 +240,9 @@ DimPlot(cd14_combined, reduction = "tsne", label = TRUE)
 ```
 
 
-Sometimes we find to find pattern in our data, NMF clustering is a great method which allows us to find pattern from a huge data. After that we can reduce the dimension even more. We will NMF on both UMAP and TSNE
+Non-negative Matrix Factorization (NMF) clustering helps identify patterns in complex data. We apply this dimensionality reduction method to both UMAP and t-SNE visualizations.
+
+
 ```{r}
 library(GeneNMF)
 cd14_combined <- runNMF(cd14_combined, k = 13, assay="RNA")
@@ -250,8 +252,7 @@ cd14_combined <- RunUMAP(cd14_combined, reduction = "NMF", dims=1:13, reduction.
 
 ```
 
-Now we can visualize the result from both UMAP and TSNE
-
+The results can now be visualized using both UMAP and t-SNE representations.
 
 ```{r}
 DimPlot(cd14_combined, reduction = "NMF_Tsne", label=F) + theme(aspect.ratio = 1,
@@ -267,7 +268,8 @@ DimPlot(cd14_combined, reduction = "NMF_UMAP", label=F) + theme(aspect.ratio = 1
     axis.ticks = element_blank()) + ggtitle("NMF UMAP")
 ```
 
-Then we can see how many "real" cluster we can get from our data and then investigate the most variable gene within each cluster. According to NMF, we can have 10 cluster unline seurat clustering which was telling that we have 13 clusters.
+NMF analysis reveals 10 distinct clusters, in contrast to Seurat's 13 clusters. We can now examine the most variable genes within each NMF-derived cluster.
+
 
 ```{r}
 cd14_list <- SplitObject(cd14_combined, split.by = "orig.ident")
@@ -279,7 +281,8 @@ cd14_meta <- getMetaPrograms(cd14_multi,
 NMF_Heatmap <- plotMetaPrograms(cd14_meta)
 ```
 
-Now we zoom in each component (cluster)
+We now examine each component (cluster) in detail.
+
 
 ```{r}
 lapply(cd14_meta$metaprograms.genes, head)
