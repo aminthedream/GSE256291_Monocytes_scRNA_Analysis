@@ -10,9 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## This document walk you through single cell RNA-Seq analysis using various R Packages
 
-We used sample files from this study: GSE256291. This data has not been published yet and it is used for visualization purpose only.
-
-The data was processed using 10x Genomics protocol.
+This analysis utilizes sample files from unpublished study GSE256291, processed with 10x Genomics protocol. Data is used for demonstration purposes only.
 
 
 
